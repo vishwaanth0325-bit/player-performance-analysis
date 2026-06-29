@@ -10,99 +10,153 @@ Original file is located at
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 
-# 1. Configures the page structure layout to wide screen viewing
-st.set_page_config(page_title="Transfermarkt Performance Dashboard", layout="wide")
+st.set_page_config(page_title="Transfermarkt Scouting Portal", layout="wide")
 
-# 2. Optimized caching mechanism to prevent re-reading the CSV on every interactive click
 @st.cache_data
 def load_data():
     return pd.read_csv("processed_players.csv")
 
 df = load_data()
 
-# Header Framework
-st.title("⚽ Footballer Performance & Style Analysis Dashboard")
-st.markdown("Evaluating player performance vectors, playing styles, and historical market valuation trajectories.")
+st.title("⚽ Advanced Footballer Metrics & Scouting Engine")
+st.markdown("Isolate individual performance profiles, filter cohorts, and tracking playing style vectors.")
+
+# Multi-Tier Navigation Tabs
+tab1, tab2 = st.tabs(["📊 Cohort Analysis & Clusters", "🔍 Individual Player Profile Deep-Dive"])
 
 # ==============================================================================
-# INTERACTIVE SIDEBAR FILTER INTERFACES
+# TAB 1: COHORT OVERVIEW
 # ==============================================================================
-st.sidebar.header("Filter Panels")
+with tab1:
+    st.header("Global Cluster Registry Analysis")
+    
+    # Sidebar Filtering Panel Interface
+    st.sidebar.header("Cohort Filtering Rules")
+    all_positions = df['position'].unique().tolist()
+    selected_positions = st.sidebar.multiselect("Select Field Position Groups:", all_positions, default=all_positions)
+    
+    # Filter clubs based on chosen positions to keep it interactive
+    available_clubs = df[df['position'].isin(selected_positions)]['club_name'].unique().tolist()
+    selected_clubs = st.sidebar.multiselect("Select Specific Clubs:", sorted(available_clubs), default=sorted(available_clubs)[:15]) # default to top 15 alphabetical for view cleanliness
+    
+    all_styles = df['playing_style'].unique().tolist()
+    selected_styles = st.sidebar.multiselect("Select Profile Playstyle:", all_styles, default=all_styles)
+    
+    # Apply global cross-filtering constraints
+    cohort_df = df[
+        (df['position'].isin(selected_positions)) &
+        (df['club_name'].isin(selected_clubs)) &
+        (df['playing_style'].isin(selected_styles))
+    ]
+    
+    if cohort_df.empty:
+        st.warning("⚠️ No players found matching the combined filter conditions. Loosen your sidebar constraints!")
+    else:
+        # High Level KPIs
+        m_col1, m_col2, m_col3 = st.columns(3)
+        m_col1.metric("Players inside Cohort Filter", f"{len(cohort_df):,}")
+        m_col2.metric("Mean Valuation of Cohort", f"€{cohort_df['current_value'].mean():,.0f}")
+        m_col3.metric("Avg Goal Contribution per 90", f"{(cohort_df['goals_per_90'] + cohort_df['assists_per_90']).mean():.2f}")
+        
+        st.markdown("---")
+        
+        # Dual Plotly Displays
+        g1, g2 = st.columns(2)
+        with g1:
+            st.subheader("Attacking Production Matrix")
+            fig1 = px.scatter(
+                cohort_df, x="assists_per_90", y="goals_per_90",
+                color="playing_style", size="current_value", hover_name="name", text="club_name",
+                labels={"assists_per_90": "Assists/90 Mins", "goals_per_90": "Goals/90 Mins"}
+            )
+            fig1.update_traces(textposition='top center')
+            st.plotly_chart(fig1, use_container_width=True)
+            
+        with g2:
+            st.subheader("Asset Valuation Trajectory Matrix")
+            fig2 = px.scatter(
+                cohort_df, x="current_value", y="value_growth_eur",
+                color="playing_style", hover_name="name", text="club_name",
+                labels={"current_value": "Current Price (€)", "value_growth_eur": "Lifetime Price Growth Delta (€)"}
+            )
+            fig2.add_hline(y=0, line_dash="dash", line_color="gray")
+            st.plotly_chart(fig2, use_container_width=True)
 
-# Position categorization filter
-all_positions = df['position'].unique().tolist()
-selected_positions = st.sidebar.multiselect("Select Position Group:", all_positions, default=all_positions)
-
-# Playstyle cluster classification filter
-all_styles = df['playing_style'].unique().tolist()
-selected_styles = st.sidebar.multiselect("Select Profile Playstyle:", all_styles, default=all_styles)
-
-# Range Slider bounded to global valuation extremes
-val_min, val_max = int(df['current_value'].min()), int(df['current_value'].max())
-selected_value = st.sidebar.slider("Current Market Valuation Range (€)", val_min, val_max, (val_min, val_max))
-
-# Apply combined logic queries across the dataset
-filtered_df = df[
-    (df['position'].isin(selected_positions)) &
-    (df['playing_style'].isin(selected_styles)) &
-    (df['current_value'].between(selected_value[0], selected_value[1]))
-]
-
-# ==============================================================================
-# LIVE STRATEGIC METRICS ROW (KPIs)
-# ==============================================================================
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Players in Scope", f"{len(filtered_df):,}")
-col2.metric("Avg Goals Per 90", f"{filtered_df['goals_per_90'].mean():.2f}")
-col3.metric("Avg Market Value", f"€{filtered_df['current_value'].mean():,.0f}")
-col4.metric("Avg Valuation Growth", f"€{filtered_df['value_growth_eur'].mean():,.0f}")
-
-st.markdown("---")
-
-# ==============================================================================
-# INTERACTIVE DATA VISUALIZATIONS SECTION (PLOTLY)
-# ==============================================================================
-chart_col1, chart_col2 = st.columns(2)
-
-with chart_col1:
-    st.subheader("Playstyle Clusters: Attacking Matrix")
-    # Generates a dynamic scatterplot showing scoring output vs creative playmaking
-    fig_scatter = px.scatter(
-        filtered_df,
-        x="assists_per_90",
-        y="goals_per_90",
-        color="playing_style",
-        size="current_value",
-        hover_name="name",
-        size_max=30,
-        labels={"assists_per_90": "Assists per 90 Mins", "goals_per_90": "Goals per 90 Mins"},
-        color_discrete_sequence=px.colors.qualitative.Vivid
-    )
-    st.plotly_chart(fig_scatter, use_container_width=True)
-
-with chart_col2:
-    st.subheader("Market Valuation Trajectory vs. Current Value")
-    # Creates a custom visualization comparing absolute cost against historical trajectory growth
-    fig_trend = px.scatter(
-        filtered_df,
-        x="current_value",
-        y="value_growth_eur",
-        color="playing_style",
-        hover_name="name",
-        labels={"current_value": "Current Valuation (€)", "value_growth_eur": "Market Value Change (Lifetime Delta €)"},
-        color_discrete_sequence=px.colors.qualitative.Vivid
-    )
-    # Visual break reference marking flat growth trajectories
-    fig_trend.add_hline(y=0, line_dash="dash", line_color="gray")
-    st.plotly_chart(fig_trend, use_container_width=True)
+        st.subheader("Cohort Data Table View")
+        st.dataframe(cohort_df[['name', 'club_name', 'position', 'playing_style', 'current_value', 'goals_per_90', 'assists_per_90']], use_container_width=True)
 
 # ==============================================================================
-# RAW DATA COMPONENT REGISTRY REGISTER
+# TAB 2: INDIVIDUAL PLAYER DEEP-DIVE
 # ==============================================================================
-st.subheader("Filtered Scouting Registry Table")
-st.dataframe(
-    filtered_df[['name', 'position', 'sub_position', 'playing_style', 'current_value', 'value_growth_eur', 'goals_per_90', 'assists_per_90', 'discipline_per_90']],
-    use_container_width=True
-)
+with tab2:
+    st.header("Single Player Radar Profiling")
+    
+    # Cascading selection filters to easily isolate a specific player
+    col_f1, col_f2, col_f3 = st.columns(3)
+    with col_f1:
+        p_pos = st.selectbox("1. Filter by Playing Position", sorted(df['position'].unique().tolist()))
+    with col_f2:
+        p_club = st.selectbox("2. Filter by Current Club Entity", sorted(df[df['position'] == p_pos]['club_name'].unique().tolist()))
+    with col_f3:
+        p_name = st.selectbox("3. Select Target Player Identity", sorted(df[(df['position'] == p_pos) & (df['club_name'] == p_club)]['name'].unique().tolist()))
+        
+    # Isolate player exact profile metrics
+    player_row = df[df['name'] == p_name].iloc[0]
+    
+    st.markdown("---")
+    
+    # UI Layout split for Profile Info cards + Performance Radar Chart Visual
+    info_col, radar_col = st.columns([1, 1.2])
+    
+    with info_col:
+        st.subheader(f"🔍 Profile File: {player_row['name']}")
+        
+        # Displaying structural attribute metadata clean cards
+        st.info(f"🏟️ **Current Club Placement:** {player_row['club_name']}")
+        st.success(f"🤖 **Assigned Style Cluster:** {player_row['playing_style']}")
+        
+        c1, c2 = st.columns(2)
+        c1.metric("Current Market Price", f"€{player_row['current_value']:,}")
+        c2.metric("Market Growth Value", f"€{player_row['value_growth_eur']:,}")
+        
+        c3, c4 = st.columns(2)
+        c3.metric("Height Dimensions", f"{player_row['height_in_cm']} cm")
+        c4.metric("Preferred Dominant Foot", f"{player_row['foot'].capitalize()}")
+        
+        st.markdown("#### Season Production Totals")
+        st.text(f"• Total Competitive Playtime: {int(player_row['minutes_played'])} minutes")
+        st.text(f"• Total Seasonal Goals Secured: {int(player_row['goals'])}")
+        st.text(f"• Total Assist Opportunities Provided: {int(player_row['assists'])}")
 
+    with radar_col:
+        st.subheader("Performance Vector vs Dataset Average")
+        
+        # Compute average metrics to plot against player specific metrics
+        avg_goals_90 = df['goals_per_90'].mean()
+        avg_assists_90 = df['assists_per_90'].mean()
+        avg_discipline_90 = df['discipline_per_90'].mean()
+        
+        # Construct Radar visualization
+        categories = ['Goals Per 90', 'Assists Per 90', 'Discipline Density Per 90']
+        
+        fig_radar = go.Figure()
+        
+        # Plot target player performance vector boundary
+        fig_radar.add_trace(go.Scatterpolar(
+            r=[player_row['goals_per_90'], player_row['assists_per_90'], player_row['discipline_per_90']],
+            theta=categories, fill='toself', name=player_row['name'], line_color='#ff4b4b'
+        ))
+        
+        # Plot global contextual median boundary line
+        fig_radar.add_trace(go.Scatterpolar(
+            r=[avg_goals_90, avg_assists_90, avg_discipline_90],
+            theta=categories, fill='toself', name='Global Database Average', line_color='rgba(255,255,255,0.4)'
+        ))
+        
+        fig_radar.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, max(df['goals_per_90'].max(), df['assists_per_90'].max())])),
+            showlegend=True, template="plotly_dark"
+        )
+        st.plotly_chart(fig_radar, use_container_width=True)
